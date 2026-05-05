@@ -1,0 +1,6 @@
+src/VideoCompressor.ts(11,3): error TS6133: 'QUALITY_LOW' is declared but its value is never read.
+src/VideoCompressor.ts(13,3): error TS6133: 'QUALITY_HIGH' is declared but its value is never read.
+src/VideoCompressor.ts(14,3): error TS6133: 'QUALITY_VERY_HIGH' is declared but its value is never read.
+src/VideoCompressor.ts(80,7): error TS2353: Object literal may only specify known properties, and 'bitrateMode' does not exist in type 'ConversionVideoOptions | ConversionVideoOptions[] | ((track: InputVideoTrack, n: number) => MaybePromise<ConversionVideoOptions | ConversionVideoOptions[] | undefined>)'.
+src/VideoCompressor.ts(111,20): error TS2322: Type 'ArrayBuffer | null' is not assignable to type 'BlobPart'.
+  Type 'null' is not assignable to type 'BlobPart'.
