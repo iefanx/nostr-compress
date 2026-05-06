@@ -1,22 +1,27 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Video, Settings, Download, Zap, CheckCircle, AlertCircle, RefreshCw, Layers, ShieldCheck, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, Video, Settings, Download, Zap, CheckCircle, AlertCircle, RefreshCw, Layers, ShieldCheck, Info, ChevronDown, ChevronUp, Image as ImageIcon, Music } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { compressVideo, getVideoMetadata, getSupportedCodecs } from './VideoCompressor';
-import type { CompressionSettings } from './VideoCompressor';
+import { compressImage, getImageMetadata } from './ImageCompressor';
+import { compressAudio, getAudioMetadata } from './AudioCompressor';
 
 function App() {
   const [file, setFile] = useState<File | null>(null);
+  const [isImage, setIsImage] = useState(false);
+  const [isAudio, setIsAudio] = useState(false);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [removeSensitiveData, setRemoveSensitiveData] = useState(true);
   const [metadata, setMetadata] = useState<any>(null);
   const [isCompressing, setIsCompressing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [supportedCodecs, setSupportedCodecs] = useState<string[]>([]);
-  const [settings, setSettings] = useState<CompressionSettings>({
+  const [settings, setSettings] = useState<any>({
     quality: 'medium',
     resolution: 1080,
     format: 'mp4',
-    codec: 'avc', // Will be upgraded to hevc in useEffect if supported
+    codec: 'avc',
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -28,10 +33,10 @@ function App() {
         const codecs = await getSupportedCodecs();
         setSupportedCodecs(codecs.video);
         // Priority: HEVC (for MP4/MOV) > AV1 (for WebM) > VP9 (for WebM) > AVC
-        if (codecs.video.includes('hevc')) setSettings(s => ({ ...s, codec: 'hevc', format: 'mp4' }));
-        else if (codecs.video.includes('av1')) setSettings(s => ({ ...s, codec: 'av1', format: 'webm' }));
-        else if (codecs.video.includes('vp9')) setSettings(s => ({ ...s, codec: 'vp9', format: 'webm' }));
-        else setSettings(s => ({ ...s, codec: 'avc', format: 'mp4' }));
+        if (codecs.video.includes('hevc')) setSettings((s: any) => ({ ...s, codec: 'hevc', format: 'mp4' }));
+        else if (codecs.video.includes('av1')) setSettings((s: any) => ({ ...s, codec: 'av1', format: 'webm' }));
+        else if (codecs.video.includes('vp9')) setSettings((s: any) => ({ ...s, codec: 'vp9', format: 'webm' }));
+        else setSettings((s: any) => ({ ...s, codec: 'avc', format: 'mp4' }));
       } catch (err) {
         console.error('Error fetching codecs:', err);
       }
@@ -42,25 +47,52 @@ function App() {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+      
       setFile(selectedFile);
       setResultBlob(null);
       setError(null);
+      
+      const isImg = selectedFile.type.startsWith('image/');
+      const isAud = selectedFile.type.startsWith('audio/');
+      setIsImage(isImg);
+      setIsAudio(isAud);
+      
+      if (isImg) {
+        setImagePreviewUrl(URL.createObjectURL(selectedFile));
+      } else {
+        setImagePreviewUrl(null);
+      }
+
       try {
-        const meta = await getVideoMetadata(selectedFile);
-        setMetadata(meta);
-        // Auto-select resolution based on input
-        if (meta.height >= 1080) setSettings(s => ({ ...s, resolution: 1080 }));
-        else if (meta.height >= 720) setSettings(s => ({ ...s, resolution: 720 }));
-        else setSettings(s => ({ ...s, resolution: 480 }));
+        let meta;
+        if (isImg) {
+          meta = await getImageMetadata(selectedFile);
+        } else if (isAud) {
+          meta = await getAudioMetadata(selectedFile);
+        } else {
+          meta = await getVideoMetadata(selectedFile);
+        }
         
-        // Detect original format
-        if (selectedFile.name.toLowerCase().endsWith('.mov')) {
-           // If it's a MOV, suggest MP4 for better compression
-           setSettings(s => ({ ...s, format: 'mp4' }));
+        setMetadata(meta);
+        
+        if (isAud) {
+          setSettings((s: any) => ({ ...s, format: 'mp3' }));
+        } else {
+          // Auto-select resolution based on input
+          const height = meta && 'height' in meta ? meta.height : 0;
+          if (height >= 1080) setSettings((s: any) => ({ ...s, resolution: 1080 }));
+          else if (height >= 720) setSettings((s: any) => ({ ...s, resolution: 720 }));
+          else setSettings((s: any) => ({ ...s, resolution: 480 }));
+          
+          // Detect original format
+          if (selectedFile.name.toLowerCase().endsWith('.mov')) {
+             setSettings((s: any) => ({ ...s, format: 'mp4' }));
+          }
         }
       } catch (err) {
         console.error(err);
-        setError('Could not read video metadata.');
+        setError(`Could not read ${isImg ? 'image' : isAud ? 'audio' : 'video'} metadata.`);
       }
     }
   };
@@ -68,7 +100,7 @@ function App() {
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && droppedFile.type.startsWith('video/')) {
+    if (droppedFile && (droppedFile.type.startsWith('video/') || droppedFile.type.startsWith('image/') || droppedFile.type.startsWith('audio/'))) {
       const target = { files: e.dataTransfer.files } as any;
       handleFileChange({ target } as any);
     }
@@ -83,7 +115,14 @@ function App() {
     setError(null);
 
     try {
-      const blob = await compressVideo(file, settings, (p) => setProgress(p * 100));
+      let blob;
+      if (isImage) {
+        blob = await compressImage(file, settings as any, removeSensitiveData, (p) => setProgress(p * 100));
+      } else if (isAudio) {
+        blob = await compressAudio(file, settings as any, removeSensitiveData, (p) => setProgress(p * 100));
+      } else {
+        blob = await compressVideo(file, settings as any, removeSensitiveData, (p) => setProgress(p * 100));
+      }
       setResultBlob(blob);
     } catch (err: any) {
       setError(err.message || 'Compression failed.');
@@ -97,7 +136,8 @@ function App() {
     const url = URL.createObjectURL(resultBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `optimized_${file?.name.split('.')[0] || 'video'}.${settings.format}`;
+    const ext = isImage ? 'jpg' : isAudio ? settings.format : settings.format;
+    a.download = `optimized_${file?.name.split('.')[0] || (isImage ? 'image' : isAudio ? 'audio' : 'video')}.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -127,7 +167,7 @@ function App() {
       >
         <h1 className="main-title">Nostr Compress</h1>
         <p className="subtitle">
-          Reduce video size by <strong>50-90%</strong> for Nostr without losing substantial quality. 
+          Reduce media size by <strong>50-90%</strong> for Nostr without losing substantial quality. 
           Save community CDN bandwidth and make your posts load instantly.
         </p>
       </motion.header>
@@ -149,16 +189,16 @@ function App() {
                 <Upload size={32} color="white" />
               </div>
               <div>
-                <h2>Drop your video here</h2>
+                <h2>Drop your media here</h2>
                 <p style={{ color: 'rgba(255,255,255,0.5)', marginTop: '0.5rem' }}>
-                  or click to browse files
+                  or click to browse files (Images, Videos & Audio)
                 </p>
               </div>
               <input 
                 type="file" 
                 ref={fileInputRef} 
                 onChange={handleFileChange} 
-                accept="video/*" 
+                accept="video/*, image/*, audio/*" 
                 style={{ display: 'none' }} 
               />
             </motion.div>
@@ -169,17 +209,29 @@ function App() {
               animate={{ opacity: 1, x: 0 }}
               className="card"
             >
+              {isImage && imagePreviewUrl && (
+                <div style={{ marginBottom: '1.5rem', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--card-border)' }}>
+                  <img src={imagePreviewUrl} alt="Preview" style={{ width: '100%', maxHeight: '200px', objectFit: 'contain', backgroundColor: 'rgba(0,0,0,0.2)' }} />
+                </div>
+              )}
+
               <div className="file-info">
                 <div className="icon-wrapper" style={{ width: 48, height: 48 }}>
-                  <Video size={24} color="white" />
+                  {isImage ? <ImageIcon size={24} color="white" /> : isAudio ? <Music size={24} color="white" /> : <Video size={24} color="white" />}
                 </div>
                 <div className="file-details">
                   <div className="file-name">{file.name}</div>
                   <div className="file-meta">
-                    {metadata ? `${formatDuration(metadata.duration)} • ${metadata.width}x${metadata.height} • ${formatSize(metadata.size)}` : 'Loading...'}
+                    {metadata ? (
+                      isImage 
+                        ? `${metadata.width}x${metadata.height} • ${formatSize(metadata.size)}`
+                        : isAudio
+                          ? `${formatDuration(metadata.duration)} • ${formatSize(metadata.size)}`
+                          : `${formatDuration(metadata.duration)} • ${metadata.width}x${metadata.height} • ${formatSize(metadata.size)}`
+                    ) : 'Loading...'}
                   </div>
                 </div>
-                <button className="badge" onClick={() => { setFile(null); setResultBlob(null); }} style={{ cursor: 'pointer', border: 'none' }}>Change</button>
+                <button className="badge" onClick={() => { setFile(null); setResultBlob(null); setImagePreviewUrl(null); }} style={{ cursor: 'pointer', border: 'none' }}>Change</button>
               </div>
 
               <div className="settings-grid">
@@ -194,6 +246,22 @@ function App() {
                     <option value="high">High (Good Detail)</option>
                     <option value="ultra">Ultra (Maintain Quality)</option>
                   </select>
+                </div>
+              </div>
+
+              <div className="setting-group" style={{ marginTop: '1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                  <input 
+                    type="checkbox" 
+                    id="removeSensitive"
+                    checked={removeSensitiveData}
+                    onChange={(e) => setRemoveSensitiveData(e.target.checked)}
+                    style={{ width: '1.2rem', height: '1.2rem', accentColor: 'var(--primary)', cursor: 'pointer', marginTop: '0.2rem' }}
+                  />
+                  <label htmlFor="removeSensitive" style={{ margin: 0, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                    <span style={{ fontWeight: 500 }}>Remove sensitive metadata</span>
+                    <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', fontWeight: 'normal' }}>Strips location & camera details</span>
+                  </label>
                 </div>
               </div>
 
@@ -226,44 +294,60 @@ function App() {
                     style={{ overflow: 'hidden' }}
                   >
                     <div className="settings-grid" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                      <div className="setting-group">
-                        <label><Layers size={14} style={{ marginRight: 6 }} /> Output Format</label>
-                        <select 
-                          value={settings.format}
-                          onChange={(e) => setSettings({...settings, format: e.target.value as any})}
-                        >
-                          <option value="mp4">MP4 (Best Compatibility)</option>
-                          <option value="webm">WebM (Best Compression)</option>
-                          <option value="mov">MOV (Original QuickTime)</option>
-                        </select>
-                      </div>
+                      {!isImage && (
+                        <div className="setting-group">
+                          <label><Layers size={14} style={{ marginRight: 6 }} /> Output Format</label>
+                          <select 
+                            value={settings.format}
+                            onChange={(e) => setSettings({...settings, format: e.target.value as any})}
+                          >
+                            {isAudio ? (
+                              <>
+                                <option value="mp3">MP3 (Best Compatibility)</option>
+                                <option value="aac">AAC (Efficient)</option>
+                                <option value="flac">FLAC (Lossless)</option>
+                              </>
+                            ) : (
+                              <>
+                                <option value="mp4">MP4 (Best Compatibility)</option>
+                                <option value="webm">WebM (Best Compression)</option>
+                                <option value="mov">MOV (Original QuickTime)</option>
+                              </>
+                            )}
+                          </select>
+                        </div>
+                      )}
 
-                      <div className="setting-group">
-                        <label><Zap size={14} style={{ marginRight: 6 }} /> Target Resolution</label>
-                        <select 
-                          value={settings.resolution}
-                          onChange={(e) => setSettings({...settings, resolution: Number(e.target.value) as any})}
-                        >
-                          <option value={480}>480p (Fast)</option>
-                          <option value={720}>720p (HD)</option>
-                          <option value={1080}>1080p (Full HD)</option>
-                          {metadata && metadata.width > 1920 && <option value={metadata.width}>Original ({metadata.width}p)</option>}
-                        </select>
-                      </div>
+                      {!isAudio && (
+                        <div className="setting-group">
+                          <label><Zap size={14} style={{ marginRight: 6 }} /> Target Resolution</label>
+                          <select 
+                            value={settings.resolution}
+                            onChange={(e) => setSettings({...settings, resolution: Number(e.target.value) as any})}
+                          >
+                            <option value={480}>480p (Fast)</option>
+                            <option value={720}>720p (HD)</option>
+                            <option value={1080}>1080p (Full HD)</option>
+                            {metadata && metadata.width > 1920 && <option value={metadata.width}>Original ({metadata.width}p)</option>}
+                          </select>
+                        </div>
+                      )}
 
-                      <div className="setting-group">
-                        <label><Settings size={14} style={{ marginRight: 6 }} /> Codec</label>
-                        <select 
-                          value={settings.codec}
-                          onChange={(e) => setSettings({...settings, codec: e.target.value})}
-                        >
-                          {supportedCodecs.map(c => (
-                            <option key={c} value={c}>
-                              {c.toUpperCase()} {['av1', 'vp9', 'hevc'].includes(c) ? '(Modern/Efficient)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      {!isImage && !isAudio && (
+                        <div className="setting-group">
+                          <label><Settings size={14} style={{ marginRight: 6 }} /> Codec</label>
+                          <select 
+                            value={settings.codec}
+                            onChange={(e) => setSettings({...settings, codec: e.target.value})}
+                          >
+                            {supportedCodecs.map(c => (
+                              <option key={c} value={c}>
+                                {c.toUpperCase()} {['av1', 'vp9', 'hevc'].includes(c) ? '(Modern/Efficient)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 )}
@@ -281,7 +365,7 @@ function App() {
               {isCompressing ? (
                 <div className="progress-container">
                   <div className="progress-info">
-                    <span>Optimizing your video...</span>
+                    <span>Optimizing your {isImage ? 'image' : isAudio ? 'audio' : 'video'}...</span>
                     <span>{Math.round(progress)}%</span>
                   </div>
                   <div className="progress-bar">
@@ -308,10 +392,12 @@ function App() {
                         <div className="icon-wrapper badge-success" style={{ width: 40, height: 40 }}>
                           <CheckCircle size={20} color="var(--success)" />
                         </div>
-                        <div className="file-details">
-                          <div className="file-name">Optimization Complete!</div>
-                          <div className="file-meta">
-                            {formatSize(resultBlob.size)} ({Math.round((1 - (resultBlob.size / file.size)) * 100)}% reduced)
+                        <div className="file-details" style={{ width: '100%' }}>
+                          <div>
+                            <div className="file-name">Optimization Complete!</div>
+                            <div className="file-meta">
+                              {formatSize(resultBlob.size)} ({Math.round((1 - (resultBlob.size / file.size)) * 100)}% reduced)
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -340,9 +426,9 @@ function App() {
       </main>
 
       <footer className="main-footer">
-        Uses <strong>WebCodecs</strong> (67x faster than traditional FFmpeg WASM)
+        Uses <strong>WebCodecs & Canvas API</strong> for high-speed local processing
         <div className="privacy-badge">
-          100% Client-Side • Your videos never leave your browser
+          100% Client-Side • Your media never leaves your browser
         </div>
       </footer>
     </div>

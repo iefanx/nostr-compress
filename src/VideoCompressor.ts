@@ -11,6 +11,7 @@ import {
   QUALITY_MEDIUM, 
   getEncodableVideoCodecs
 } from 'mediabunny';
+import exifr from 'exifr';
 
 export type CompressionSettings = {
   quality: 'low' | 'medium' | 'high' | 'ultra';
@@ -31,6 +32,7 @@ export async function getSupportedCodecs() {
 export async function compressVideo(
   file: File,
   settings: CompressionSettings,
+  removeSensitiveData: boolean,
   onProgress: ProgressCallback
 ): Promise<Blob> {
   const input = new Input({
@@ -104,7 +106,7 @@ export async function compressVideo(
     audio: {
       bitrate: QUALITY_MEDIUM,
     },
-    tags: {}, 
+    tags: removeSensitiveData ? {} : undefined, 
   });
 
   if (!conversion.isValid) {
@@ -131,7 +133,7 @@ export async function compressVideo(
   return new Blob([buffer], { type: mimeType });
 }
 
-export async function getVideoMetadata(file: File) {
+export async function getVideoMetadata(file: Blob) {
   const input = new Input({
     formats: ALL_FORMATS,
     source: new BlobSource(file),
@@ -148,10 +150,34 @@ export async function getVideoMetadata(file: File) {
     height = await videoTrack.getDisplayHeight();
   }
 
+  let latitude: number | undefined;
+  let longitude: number | undefined;
+  let make: string | undefined;
+  let model: string | undefined;
+  let dateTimeOriginal: string | undefined;
+
+  try {
+    const exif = await exifr.parse(file);
+    if (exif) {
+      if (exif.latitude !== undefined) latitude = exif.latitude;
+      if (exif.longitude !== undefined) longitude = exif.longitude;
+      if (exif.Make) make = exif.Make;
+      if (exif.Model) model = exif.Model;
+      if (exif.DateTimeOriginal) dateTimeOriginal = new Date(exif.DateTimeOriginal).toLocaleString();
+    }
+  } catch (err) {
+    // Ignore, file might not have parsable EXIF
+  }
+
   return {
     duration,
     width,
     height,
     size: file.size,
+    latitude,
+    longitude,
+    make,
+    model,
+    dateTimeOriginal
   };
 }

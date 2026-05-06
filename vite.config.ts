@@ -12,6 +12,9 @@ export default defineConfig({
         enabled: true
       },
       includeAssets: ['favicon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
+      workbox: {
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024
+      },
       manifest: {
         name: 'Nostr Compress',
         short_name: 'NostrCompress',
