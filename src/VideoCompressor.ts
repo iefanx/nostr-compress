@@ -82,8 +82,11 @@ export async function compressVideo(
       width: settings.resolution,
       bitrate: targetBitrate,
       codec: settings.codec as any,
-      // For Ultra quality, software encoders (if available) are often superior to hardware at the same size
-      hardwareAcceleration: settings.quality === 'ultra' ? 'prefer-software' : 'prefer-hardware',
+      // For Ultra quality, software is preferred. For WebM codecs (VP9, VP8, AV1), hardware encoding
+      // is often unsupported on macOS, so we use 'no-preference' to allow software fallback.
+      hardwareAcceleration: settings.quality === 'ultra' 
+        ? 'prefer-software' 
+        : (['vp9', 'vp8', 'av1'].includes(settings.codec || '') ? 'no-preference' : 'prefer-hardware'),
       keyFrameInterval: 2,
       // Apply perceptual sharpening for High/Ultra presets
       process: (settings.quality === 'high' || settings.quality === 'ultra') ? async (sample) => {

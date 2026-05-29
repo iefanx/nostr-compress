@@ -5,6 +5,12 @@ import { compressVideo, getVideoMetadata, getSupportedCodecs } from './VideoComp
 import { compressImage, getImageMetadata } from './ImageCompressor';
 import { compressAudio, getAudioMetadata } from './AudioCompressor';
 
+const FORMAT_COMPATIBLE_CODECS: Record<string, string[]> = {
+  mp4: ['avc', 'hevc', 'av1'],
+  mov: ['avc', 'hevc'],
+  webm: ['vp9', 'vp8', 'av1']
+};
+
 function App() {
   const [file, setFile] = useState<File | null>(null);
   const [isImage, setIsImage] = useState(false);
@@ -26,6 +32,31 @@ function App() {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFormatChange = (newFormat: string) => {
+    let newCodec = settings.codec;
+    const compatible = FORMAT_COMPATIBLE_CODECS[newFormat] || [];
+    const available = compatible.filter(c => supportedCodecs.includes(c));
+    
+    if (!available.includes(newCodec)) {
+      if (newFormat === 'webm') {
+        if (available.includes('vp9')) newCodec = 'vp9';
+        else if (available.includes('av1')) newCodec = 'av1';
+        else if (available.includes('vp8')) newCodec = 'vp8';
+        else newCodec = available[0] || 'vp9';
+      } else {
+        if (available.includes('hevc')) newCodec = 'hevc';
+        else if (available.includes('avc')) newCodec = 'avc';
+        else newCodec = available[0] || 'avc';
+      }
+    }
+    
+    setSettings((s: any) => ({
+      ...s,
+      format: newFormat,
+      codec: newCodec
+    }));
+  };
 
   useEffect(() => {
     const fetchCodecs = async () => {
@@ -137,7 +168,8 @@ function App() {
     const a = document.createElement('a');
     a.href = url;
     const ext = isImage ? 'jpg' : isAudio ? settings.format : settings.format;
-    a.download = `optimized_${file?.name.split('.')[0] || (isImage ? 'image' : isAudio ? 'audio' : 'video')}.${ext}`;
+    const baseName = file ? file.name.substring(0, file.name.lastIndexOf('.')) : (isImage ? 'image' : isAudio ? 'audio' : 'video');
+    a.download = `optimized_${baseName}.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -231,7 +263,14 @@ function App() {
                     ) : 'Loading...'}
                   </div>
                 </div>
-                <button className="badge" onClick={() => { setFile(null); setResultBlob(null); setImagePreviewUrl(null); }} style={{ cursor: 'pointer', border: 'none' }}>Change</button>
+                <button 
+                  className="badge" 
+                  onClick={() => { setFile(null); setResultBlob(null); setImagePreviewUrl(null); }} 
+                  disabled={isCompressing}
+                  style={{ cursor: isCompressing ? 'not-allowed' : 'pointer', border: 'none', opacity: isCompressing ? 0.5 : 1 }}
+                >
+                  Change
+                </button>
               </div>
 
               <div className="settings-grid">
@@ -240,6 +279,7 @@ function App() {
                   <select 
                     value={settings.quality}
                     onChange={(e) => setSettings({...settings, quality: e.target.value as any})}
+                    disabled={isCompressing || resultBlob !== null}
                   >
                     <option value="low">Low (Smallest size)</option>
                     <option value="medium">Medium (Standard)</option>
@@ -256,9 +296,10 @@ function App() {
                     id="removeSensitive"
                     checked={removeSensitiveData}
                     onChange={(e) => setRemoveSensitiveData(e.target.checked)}
-                    style={{ width: '1.2rem', height: '1.2rem', accentColor: 'var(--primary)', cursor: 'pointer', marginTop: '0.2rem' }}
+                    disabled={isCompressing || resultBlob !== null}
+                    style={{ width: '1.2rem', height: '1.2rem', accentColor: 'var(--primary)', cursor: (isCompressing || resultBlob !== null) ? 'not-allowed' : 'pointer', marginTop: '0.2rem' }}
                   />
-                  <label htmlFor="removeSensitive" style={{ margin: 0, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                  <label htmlFor="removeSensitive" style={{ margin: 0, cursor: (isCompressing || resultBlob !== null) ? 'not-allowed' : 'pointer', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                     <span style={{ fontWeight: 500 }}>Remove sensitive metadata</span>
                     <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', fontWeight: 'normal' }}>Strips location & camera details</span>
                   </label>
@@ -297,9 +338,10 @@ function App() {
                       {!isImage && (
                         <div className="setting-group">
                           <label><Layers size={14} style={{ marginRight: 6 }} /> Output Format</label>
-                          <select 
+                           <select 
                             value={settings.format}
-                            onChange={(e) => setSettings({...settings, format: e.target.value as any})}
+                            onChange={(e) => handleFormatChange(e.target.value)}
+                            disabled={isCompressing || resultBlob !== null}
                           >
                             {isAudio ? (
                               <>
@@ -324,6 +366,7 @@ function App() {
                           <select 
                             value={settings.resolution}
                             onChange={(e) => setSettings({...settings, resolution: Number(e.target.value) as any})}
+                            disabled={isCompressing || resultBlob !== null}
                           >
                             <option value={480}>480p (Fast)</option>
                             <option value={720}>720p (HD)</option>
@@ -339,12 +382,15 @@ function App() {
                           <select 
                             value={settings.codec}
                             onChange={(e) => setSettings({...settings, codec: e.target.value})}
+                            disabled={isCompressing || resultBlob !== null}
                           >
-                            {supportedCodecs.map(c => (
-                              <option key={c} value={c}>
-                                {c.toUpperCase()} {['av1', 'vp9', 'hevc'].includes(c) ? '(Modern/Efficient)' : ''}
-                              </option>
-                            ))}
+                            {supportedCodecs
+                              .filter(c => (FORMAT_COMPATIBLE_CODECS[settings.format] || []).includes(c))
+                              .map(c => (
+                                <option key={c} value={c}>
+                                  {c.toUpperCase()} {['av1', 'vp9', 'hevc'].includes(c) ? '(Modern/Efficient)' : ''}
+                                </option>
+                              ))}
                           </select>
                         </div>
                       )}

@@ -4,15 +4,19 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: './',
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       devOptions: {
         enabled: true
       },
       includeAssets: ['favicon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
-      workbox: {
+      injectManifest: {
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024
       },
       manifest: {
@@ -44,4 +48,19 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
   },
+  build: {
+    chunkSizeWarningLimit: 4000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('mediabunny')) return 'mediabunny';
+            if (id.includes('react') || id.includes('framer-motion')) return 'react-vendor';
+            if (id.includes('lucide')) return 'lucide-vendor';
+            return 'vendor';
+          }
+        }
+      }
+    }
+  }
 })

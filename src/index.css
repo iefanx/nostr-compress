@@ -169,6 +169,13 @@ select:focus {
   background: rgba(255, 255, 255, 0.1);
 }
 
+select:disabled, input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
 .button {
   background: linear-gradient(135deg, var(--primary), var(--secondary));
   color: white;
